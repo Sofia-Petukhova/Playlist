@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import Generic, Iterator, Optional, TypeVar
 
 T = TypeVar("T")
@@ -22,7 +23,6 @@ class LinkedListItem(Generic[T]):
 
     @next_item.setter
     def next_item(self, value: Optional[LinkedListItem[T]]) -> None:
-        # Соседние узлы одного класса обновляются без рекурсивных вызовов сеттеров.
         # pylint: disable=protected-access
         if self._next is not None:
             self._next._previous = None
@@ -54,8 +54,9 @@ class LinkedList(Generic[T]):
     def __init__(self, first_item: Optional[LinkedListItem[T]] = None) -> None:
         self.first_item = first_item
         self._cursor: Optional[Iterator[LinkedListItem[T]]] = None
-        if first_item is not None and first_item.next_item is None:
-            first_item.next_item = first_item
+        for node in self:
+            if node.next_item is None:
+                node.next_item = first_item
 
     @property
     def last(self) -> Optional[LinkedListItem[T]]:
@@ -83,11 +84,16 @@ class LinkedList(Generic[T]):
                 break
             node = node.previous_item
 
+    def values(self) -> Iterator[T]:
+        """Перебирает значения в прямом порядке."""
+        return (node.data for node in self)
+
     def __len__(self) -> int:
         return sum(1 for _ in self)
 
     def node_at(self, index: int) -> LinkedListItem[T]:
-        """Находит узел по позиции, включая отрицательные индексы."""
+        """Возвращает узел по индексу."""
+        index = operator.index(index)
         if index < 0:
             index += len(self)
         for position, node in enumerate(self):
@@ -99,9 +105,10 @@ class LinkedList(Generic[T]):
         return self.node_at(index).data
 
     def __contains__(self, item: object) -> bool:
-        return any(node.data == item for node in self)
+        return any(value == item for value in self.values())
 
     def _find(self, item: T) -> LinkedListItem[T]:
+        """Возвращает первый узел с указанным значением."""
         for node in self:
             if node.data == item:
                 return node
@@ -136,15 +143,32 @@ class LinkedList(Generic[T]):
 
     def _detach(self, node: LinkedListItem[T]) -> None:
         """Отсоединяет узел, сохраняя кольцо у оставшихся элементов."""
-        if node.next_item is node:
+        successor = node.next_item
+        if successor is node:
             self.first_item = None
             node.next_item = None
         else:
             if self.first_item is node:
-                self.first_item = node.next_item
-            node.previous_item.next_item = node.next_item
+                self.first_item = successor
+            node.previous_item.next_item = successor
         self._cursor = None
 
     def remove(self, item: T) -> None:
         """Удаляет первое совпадение или возбуждает ValueError."""
         self._detach(self._find(item))
+
+    def move(self, source: int, target: int) -> None:
+        """Перемещает узел на указанный индекс."""
+        positions = range(len(self))
+        source = positions[source]
+        target = positions[target]
+        if source == target:
+            return
+
+        node = self.node_at(source)
+        self._detach(node)
+        if target == 0:
+            self._insert_after(self.last, node)
+            self.first_item = node
+        else:
+            self._insert_after(self.node_at(target - 1), node)

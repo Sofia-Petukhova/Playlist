@@ -7,7 +7,6 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
-import audio
 from playlist import Composition, PlayList
 
 
@@ -18,8 +17,8 @@ class PlayerWindow:
         self.root = root
         root.title("Музыкальный плеер")
         root.minsize(620, 390)
-        self.library = {"Мой плейлист": PlayList()}
         self.name = "Мой плейлист"
+        self.library = {self.name: PlayList()}
         body = ttk.Frame(root, padding=16)
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
@@ -58,6 +57,7 @@ class PlayerWindow:
 
     @staticmethod
     def _buttons(parent: ttk.Frame, actions: list[tuple[str, Callable[[], None]]]) -> None:
+        """Добавляет кнопки в одну строку."""
         for label, action in actions:
             ttk.Button(parent, text=label, command=action).pack(side="left", padx=2)
 
@@ -67,30 +67,38 @@ class PlayerWindow:
         return self.library.get(self.name)
 
     def _refresh(self, selected: int = 0) -> None:
+        """Обновляет список плейлистов и треков."""
         self.selector.configure(values=tuple(self.library))
         self.selector.set(self.name)
         self.tracks.delete(0, tk.END)
-        if self.playlist is not None:
-            for node in self.playlist:
-                self.tracks.insert(tk.END, node.data.title)
+        playlist = self.playlist
+        if playlist is not None:
+            for track in playlist.values():
+                self.tracks.insert(tk.END, track.title)
         if self.tracks.size():
-            index = min(selected, self.tracks.size() - 1)
-            self.tracks.selection_set(index)
-            self.tracks.see(index)
-        self._status()
+            self._select_track(min(selected, self.tracks.size() - 1))
+        self._update_status()
 
-    def _status(self) -> None:
-        track = self.playlist.current if self.playlist is not None else None
-        if track is not None:
-            self.status.set(f"Играет — {track.title}")
-        elif self.playlist is None:
+    def _select_track(self, index: int) -> None:
+        """Выделяет строку и прокручивает список до неё."""
+        self.tracks.selection_clear(0, tk.END)
+        self.tracks.selection_set(index)
+        self.tracks.see(index)
+
+    def _update_status(self) -> None:
+        """Показывает состояние выбранного плейлиста."""
+        playlist = self.playlist
+        if playlist is None:
             self.status.set("Создайте плейлист, чтобы добавить музыку.")
-        elif self.playlist.first_item is None:
-            self.status.set("Добавьте аудиофайлы в плейлист.")
-        else:
+        elif playlist.current is not None:
+            self.status.set(f"Играет — {playlist.current.title}")
+        elif self.tracks.size():
             self.status.set("Воспроизведение остановлено")
+        else:
+            self.status.set("Добавьте аудиофайлы в плейлист.")
 
     def _switch(self, _event: tk.Event) -> None:
+        """Открывает выбранный плейлист."""
         new_name = self.selector.get()
         if self.name != new_name:
             self.stop()
@@ -120,68 +128,77 @@ class PlayerWindow:
 
     def add(self) -> None:
         """Добавляет выбранные музыкальные файлы."""
-        if self.playlist is None:
+        playlist = self.playlist
+        if playlist is None:
             return
         paths = filedialog.askopenfilenames(parent=self.root, title="Добавить композиции",
                                             filetypes=[("Музыка", ("*.wav", "*.mp3", "*.ogg")),
                                                        ("Все файлы", "*")])
         if paths:
-            start = len(self.playlist)
+            start = self.tracks.size()
             for path in paths:
-                self.playlist.append(Composition(Path(path)))
+                playlist.append(Composition(Path(path)))
             self._refresh(start)
 
     def remove(self) -> None:
         """Удаляет выбранную запись."""
+        playlist = self.playlist
         selection = self.tracks.curselection()
-        if selection:
+        if playlist is not None and selection:
             index = selection[0]
-            self._audio_action(lambda: self.playlist.remove(self.playlist[index]))
+            track = playlist[index]
+            self._audio_action(lambda: playlist.remove(track))
             self._refresh(index)
 
     def move(self, offset: int) -> None:
         """Перемещает выбранную запись на соседнюю позицию."""
+        playlist = self.playlist
         selection = self.tracks.curselection()
-        if selection:
+        if playlist is not None and selection:
             index = selection[0]
             target = index + offset
             if 0 <= target < self.tracks.size():
-                self.playlist.move(index, target)
+                playlist.move(index, target)
                 self._refresh(target)
 
     def _audio_action(self, action: Callable[[], None]) -> None:
+        """Выполняет команду и показывает ошибку звука."""
         try:
             action()
         except OSError as exc:
             messagebox.showerror("Ошибка воспроизведения", str(exc), parent=self.root)
-        self._status()
 
     def play_selected(self, _event: Optional[tk.Event] = None) -> None:
         """Запускает трек, выделенный в списке."""
+        playlist = self.playlist
         selection = self.tracks.curselection()
-        if selection:
-            self._audio_action(lambda: self.playlist.play_all(self.playlist[selection[0]]))
+        if playlist is not None and selection:
+            track = playlist[selection[0]]
+            self._audio_action(lambda: playlist.play_all(track))
+            self._update_status()
 
     def step(self, direction: int) -> None:
         """Переключает воспроизведение и выделяет текущую композицию."""
         playlist = self.playlist
         if playlist is not None:
             self._audio_action(playlist.next_track if direction > 0 else playlist.previous_track)
-            for index, node in enumerate(playlist):
-                if node.data is playlist.current:
-                    self.tracks.selection_clear(0, tk.END)
-                    self.tracks.selection_set(index)
-                    self.tracks.see(index)
+            self._update_status()
+            for index, track in enumerate(playlist.values()):
+                if track is playlist.current:
+                    self._select_track(index)
                     break
 
     def stop(self) -> None:
         """Завершает воспроизведение вручную."""
-        if self.playlist is not None:
-            self.playlist.stop()
-            self._status()
+        playlist = self.playlist
+        if playlist is not None:
+            playlist.stop()
+            self._update_status()
 
     def _poll(self) -> None:
-        if self.playlist is not None and self.playlist.current is not None and not audio.is_playing():
+        """Проверяет, пора ли запустить следующий трек."""
+        playlist = self.playlist
+        if playlist is not None and playlist.track_finished():
             self.step(1)
         self.root.after(150, self._poll)
 

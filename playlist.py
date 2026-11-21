@@ -23,21 +23,31 @@ class Composition:
 
 
 class PlayList(LinkedList[Composition]):
-    """Переключает треки по ссылкам и сохраняет текущий узел при перестановке."""
+    """Управляет воспроизведением композиций."""
 
-    def __init__(self, play_file: Callable[[Path], None] = audio.play_file,
-                 stop_audio: Callable[[], None] = audio.stop) -> None:
+    def __init__(
+        self,
+        play_file: Callable[[Path], None] = audio.play_file,
+        stop_audio: Callable[[], None] = audio.stop,
+        is_playing: Callable[[], bool] = audio.is_playing,
+    ) -> None:
         super().__init__()
         self._playing: Optional[LinkedListItem[Composition]] = None
         self._play_file = play_file
         self._stop_audio = stop_audio
+        self._is_playing = is_playing
 
     @property
     def current(self) -> Optional[Composition]:
         """Играющая композиция или None после остановки."""
         return self._playing.data if self._playing is not None else None
 
+    def track_finished(self) -> bool:
+        """Проверяет, закончился ли выбранный для воспроизведения трек."""
+        return self._playing is not None and not self._is_playing()
+
     def _start(self, node: Optional[LinkedListItem[Composition]]) -> None:
+        """Отмечает трек текущим после успешного запуска."""
         if node is not None:
             self._playing = None
             self._play_file(node.data.path)
@@ -64,24 +74,9 @@ class PlayList(LinkedList[Composition]):
     def remove(self, item: Composition) -> None:
         """При удалении играющего трека продолжает со следующего."""
         node = self._find(item)
-        playing = node is self._playing
         successor = node.next_item
         self._detach(node)
-        if playing:
+        if node is self._playing:
             self.stop()
             if successor is not node:
                 self._start(successor)
-
-    def move(self, source: int, target: int) -> None:
-        """Переставляет узел на указанную позицию без перезапуска музыки."""
-        node = self.node_at(source)
-        destination = self.node_at(target)
-        if node is destination:
-            return
-        order = range(len(self))
-        forward = order[source] < order[target]
-        self._detach(node)
-        previous = destination if forward else destination.previous_item
-        self._insert_after(previous, node)
-        if not forward and destination is self.first_item:
-            self.first_item = node
