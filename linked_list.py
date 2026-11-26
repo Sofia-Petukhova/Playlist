@@ -64,6 +64,7 @@ class LinkedList(Generic[T]):
         return self.first_item.previous_item if self.first_item is not None else None
 
     def __iter__(self) -> Iterator[LinkedListItem[T]]:
+        """Перебирает узлы от первого до последнего."""
         node = self.first_item
         while node is not None:
             yield node
@@ -72,11 +73,13 @@ class LinkedList(Generic[T]):
                 break
 
     def __next__(self) -> LinkedListItem[T]:
+        """Возвращает следующий узел при вызове next() для списка."""
         if self._cursor is None:
             self._cursor = iter(self)
         return next(self._cursor)
 
     def __reversed__(self) -> Iterator[T]:
+        """Перебирает значения от последнего до первого."""
         node = self.last
         while node is not None:
             yield node.data
@@ -89,6 +92,7 @@ class LinkedList(Generic[T]):
         return (node.data for node in self)
 
     def __len__(self) -> int:
+        """Возвращает количество узлов в списке."""
         return sum(1 for _ in self)
 
     def node_at(self, index: int) -> LinkedListItem[T]:
@@ -102,9 +106,11 @@ class LinkedList(Generic[T]):
         raise IndexError("Индекс за пределами списка")
 
     def __getitem__(self, index: int) -> T:
+        """Возвращает значение по индексу."""
         return self.node_at(index).data
 
     def __contains__(self, item: object) -> bool:
+        """Проверяет, есть ли значение в списке."""
         return any(value == item for value in self.values())
 
     def _find(self, item: T) -> LinkedListItem[T]:
